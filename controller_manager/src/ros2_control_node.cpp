@@ -25,28 +25,46 @@ int main(int argc, char ** argv)
   rclcpp::init(argc, argv);
 
   std::shared_ptr<rclcpp::Executor> executor =
-    std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
+          std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
   std::string manager_node_name = "controller_manager";
 
   auto cm = std::make_shared<controller_manager::ControllerManager>(
-    executor,
-    manager_node_name);
+          executor,
+          manager_node_name);
 
-  // load controller_manager update time parameter
-  int update_rate = 100;
-  if (!cm->get_parameter("update_rate", update_rate)) {
-    throw std::runtime_error("update_rate parameter not existing or empty");
-  }
-  RCLCPP_INFO(cm->get_logger(), "update rate is %d Hz", update_rate);
+//  // load controller_manager update time parameter
+//  int update_rate = 100;
+//  if (!cm->get_parameter("update_rate", update_rate)) {
+//    throw std::runtime_error("update_rate parameter not existing or empty");
+//  }
+//  RCLCPP_INFO(cm->get_logger(), "update rate is %d Hz", update_rate);
+//
+//  auto timer = cm->create_wall_timer(
+//    std::chrono::milliseconds(1000 / update_rate),
+//    [&cm]() {
+//      cm->read();
+//      cm->update();
+//      cm->write();
+//    },
+//    cm->deterministic_callback_group_);
 
-  auto timer = cm->create_wall_timer(
-    std::chrono::milliseconds(1000 / update_rate),
-    [&cm]() {
-      cm->read();
-      cm->update();
-      cm->write();
-    },
-    cm->deterministic_callback_group_);
+  std::thread cm_thread([cm]() {
+      // load controller_manager update time parameter
+      int update_rate = 100;
+      if (!cm->get_parameter("update_rate", update_rate)) {
+        throw std::runtime_error("update_rate parameter not existing or empty");
+      }
+      RCLCPP_INFO(cm->get_logger(), "update rate is %d Hz", update_rate);
+
+      while (rclcpp::ok()) {
+        cm->read();
+        cm->update();
+        cm->write();
+        struct timespec duration{};
+        duration.tv_nsec = 1000000000 / update_rate;
+        clock_nanosleep(CLOCK_MONOTONIC, 0, &duration, NULL);
+      }
+  });
 
   executor->add_node(cm);
   executor->spin();
